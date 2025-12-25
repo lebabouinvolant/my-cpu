@@ -14,8 +14,10 @@ opcodes:
 8 = halt -> rien, on arrête le programme
 9 = push -> 8 bits pour le registre
 10 = pop -> 8 bits pour le registre
-
-
+11 = JZ (jump if zero) -> 8 bits pour l'adresse de l'instruction
+11 = JNZ (jump if not zero) -> 8 bits pour l'adresse de l'instruction
+12 = JL (jump if less) -> 8 bits pour l'adresse de l'instruction
+13 = JG (jump if greater) -> 8 bits pour l'adresse de l'instruction
 flags:
 sur 8 bits: [inutile], [inutile], [inutile], [inutile], Overflow, carry / borrow, négatif, nul
 
@@ -34,7 +36,7 @@ class VCPU
     private:
         uint32_t R[4] = {0,0,0,0};
         uint32_t PC = 0;
-        uint32_t SP = 256;
+        uint32_t SP = 255;
         uint8_t FLAGS = 0;
         bool isPlaying;
         void LOOP()
@@ -53,7 +55,7 @@ class VCPU
                 uint8_t rIndex = memory[PC+1];
                 if(memory[PC+2] < 4 && rIndex < 4)
                 {
-                    uint64_t checkCarry = R[rIndex] + R[memory[PC+2]];
+                    uint32_t originalValue = R[rIndex];
                     R[rIndex] += R[memory[PC+2]];
                     if(R[rIndex] == 0)
                     {
@@ -65,11 +67,20 @@ class VCPU
                         FLAGS |= 1 << 1;
                     }
                     else FLAGS &= ~(1 << 1);
-                    if(checkCarry > 0xFFFFFFFF)
+                    if(R[rIndex] < originalValue) //Carry car retour au début
                     {
                         FLAGS |= 1 << 2;
                     }
                     else FLAGS &= ~(1 << 2);
+                    int32_t a = originalValue; 
+                    int32_t b = R[memory[PC+2]]; 
+                    int32_t res = R[rIndex];
+                    if((a > 0 && b > 0 && res < 0) || (a < 0 && b < 0 && res > 0)) //Overflow (incohérence de signe)
+                    {
+                        FLAGS |= 1 << 3;
+                    }
+                    else FLAGS &= ~(1 << 3); 
+
                     PC += 3; 
                 }
                 else isPlaying = false;
@@ -80,7 +91,7 @@ class VCPU
                 uint8_t rIndex = memory[PC+1];
                 if(memory[PC+2] < 4 && rIndex <4)
                 {
-                    uint64_t checkCarry = R[rIndex] - R[memory[PC+2]];
+                    uint32_t originalValue = R[rIndex];
                     R[rIndex] -= R[memory[PC+2]];
                     if(R[rIndex] == 0)
                     {
@@ -92,11 +103,19 @@ class VCPU
                         FLAGS |= 1 << 1;
                     }
                     else FLAGS &= ~(1 << 1);
-                    if(R[rIndex] < R[memory[PC+2]])
+                    if(R[rIndex] < originalValue)
                     {
                         FLAGS |= 1 << 2;
                     }
                     else FLAGS &= ~(1 << 2);
+                    int32_t a = originalValue; 
+                    int32_t b = R[memory[PC+2]]; 
+                    int32_t res = R[rIndex];
+                    if((a > 0 && b < 0 && res < 0) || (a < 0 && b > 0 && res > 0)) //Overflow (incohérence de signe)
+                    {
+                        FLAGS |= 1 << 3;
+                    }
+                    else FLAGS &= ~(1 << 3); 
                     PC += 3; 
                 }
                 else isPlaying = false;
@@ -132,25 +151,31 @@ class VCPU
             else if(memory[PC] == 7 && PC < memorySize-1) // CMP
             {
                 uint8_t rIndex = memory[PC+1];
-                uint64_t checkCarry = R[rIndex] - R[memory[PC+2]];
                 uint32_t checkVal = R[rIndex] - R[memory[PC+2]];
-                if(checkVal == 0)
+                if(checkVal == 0) //Nul
                 {
                     FLAGS |= 1 << 0;
                 }
                 else FLAGS &= ~(1 << 0);
-                if(checkVal & (1 << 31))
+                if(checkVal & (1 << 31)) //Négatif (le bit de poids fort est set à 1 en binaire signé)
                 {
                     FLAGS |= 1 << 1;
                 }
                 else FLAGS &= ~(1 << 1);
-                if(checkVal < R[memory[PC+2]])
+                if(checkVal < R[memory[PC+2]]) //Carry / borrow (si a-b < b, alors bug donc carry)
                 {
                     FLAGS |= 1 << 2;
                 }
                 else FLAGS &= ~(1 << 2);
+                int32_t a = R[rIndex]; //On convertit en binaire signé
+                int32_t b = R[memory[PC+2]];
+                int32_t res = checkVal;
+                if((a > 0 && b < 0 && res < 0) || (a < 0 && b > 0 && res > 0)) //Overflow (incohérence de signe)
+                {
+                    FLAGS |= 1 << 3;
+                }
+                else FLAGS &= ~(1 << 3); 
                 PC += 3; 
-
             }
             else if(memory[PC] == 8) //HALT
             {
@@ -175,12 +200,42 @@ class VCPU
                 uint8_t rIndex = memory[PC+1];
                 if(rIndex < 4 && SP+4 < realMemorySize && SP >= memorySize)
                 {
-                    R[rIndex] = memory[SP+1] + (memory[SP+2] << 8) + (memory[SP+3] << 16) + (memory[SP+4] << 24);                    
+                    R[rIndex] = memory[SP] + (memory[SP+1] << 8) + (memory[SP+2] << 16) + (memory[SP+3] << 24);                    
                     SP+=4;
                     PC += 2;
                 }
                 else isPlaying = false;
             }
+            else if(memory[PC] == 10 && PC < memorySize - 1 && memory[PC+1] < memorySize) //JZ
+            {
+                if(FLAGS & (1 << 0) && memory[PC+1] < memorySize)
+                {
+                    PC = memory[PC+1];
+                }
+            }
+            else if(memory[PC] == 11 && PC < memorySize - 1 && memory[PC+1] < memorySize) //JNZ
+            {
+                if(!(FLAGS & (1 << 0)))
+                {
+                    PC = memory[PC+1];
+                }
+            }
+            else if(memory[PC] == 11 && PC < memorySize - 1) //JL
+            {
+                if((FLAGS & (1 << 1)) != (FLAGS & (1 << 3)))
+                {
+                    PC = memory[PC+1];
+                }
+            }
+            else if(memory[PC] == 12 && PC < memorySize - 1 && memory[PC+1] < memorySize) //JG
+            {
+                if((FLAGS & (1 << 1)) == (FLAGS & (1 << 3)) && !(FLAGS & (1 << 0))) //négatif seulement si overflow, et pas nul
+                {
+                    PC = memory[PC+1];
+                }
+            }
+            //Reste à implémenter (pour les jmp conditionnels) JB et JAE
+
             else{isPlaying = false;} //opcode inconnu -> HALT
             
         }
