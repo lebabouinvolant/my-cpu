@@ -12,18 +12,23 @@ opcodes:
 6 = jump -> 8 bits pour nouvelle adresse de programme
 7 = cmp -> 8 bits pour registre A, 8 bits registre B
 8 = halt -> rien, on arrête le programme
+9 = push -> 8 bits pour le registre
+10 = pop -> 8 bits pour le registre
 
 
 flags:
 sur 8 bits: [inutile], [inutile], [inutile], [inutile], Overflow, carry / borrow, négatif, nul
 
 
-config : mémoires 8 bits, 4 registres 32 bits, little endian, bits de 192 à 256 réservés à la stack
+config : mémoires 8 bits, 4 registres 32 bits, little endian, bits de 192 à 255 réservés à la stack
+
+SP pointe la prochaine case libre
 */
 
 
 uint8_t memory[256];
-uint32_t memorySize = 256;
+uint32_t memorySize = 192; //La taille pour la mémoire sans la stack (la ram quoi)
+uint32_t realMemorySize = 256; //On n'utilisera pas le size() pour se rapprocher d'un vrai CPU 
 class VCPU
 {
     private:
@@ -34,19 +39,19 @@ class VCPU
         bool isPlaying;
         void LOOP()
         {
-            if(memory[PC] == 1) // STORE
+            if(memory[PC] == 1 && PC < memorySize - 5) // STORE
             {
-                if(PC < memorySize - 5 && memory[PC+1] < 4)
+                if(memory[PC+1] < 4)
                 {
                     R[memory[PC+1]] = memory[PC+2] + (memory[PC+3] << 8) + (memory[PC+4] << 16) + (memory[PC+5] << 24);
                     PC += 6;
                 }
                 else isPlaying = false; // HALT on invalid index
             }
-            else if(memory[PC] == 2) // ADD
+            else if(memory[PC] == 2 && PC < memorySize-2) // ADD
             {
                 uint8_t rIndex = memory[PC+1];
-                if(PC < memorySize-2 && memory[PC+2] < 4 && rIndex < 4)
+                if(memory[PC+2] < 4 && rIndex < 4)
                 {
                     uint64_t checkCarry = R[rIndex] + R[memory[PC+2]];
                     R[rIndex] += R[memory[PC+2]];
@@ -70,10 +75,10 @@ class VCPU
                 else isPlaying = false;
                                 
             }
-            else if(memory[PC] == 3) // SUB
+            else if(memory[PC] == 3 && PC < memorySize-2) // SUB
             {
                 uint8_t rIndex = memory[PC+1];
-                if(PC < memorySize-2 && memory[PC+2] < 4 && rIndex <4)
+                if(memory[PC+2] < 4 && rIndex <4)
                 {
                     uint64_t checkCarry = R[rIndex] - R[memory[PC+2]];
                     R[rIndex] -= R[memory[PC+2]];
@@ -97,18 +102,18 @@ class VCPU
                 else isPlaying = false;
             }
 
-            else if(memory[PC] == 4) // LOAD
+            else if(memory[PC] == 4 && PC < memorySize-2) // LOAD
             {
-                if(PC < memorySize-2 && memory[PC+2] < memorySize-3 && memory[PC+1]<4)
+                if(memory[PC+2] < memorySize-3 && memory[PC+1]<4)
                 {
                     R[memory[PC+1]] = memory[memory[PC+2]] + (memory[memory[PC+2]+1] << 8) + (memory[memory[PC+2]+2] << 16) + (memory[memory[PC+2]+3] << 24);
                     PC += 3;
                 }
                 else isPlaying = false;
             }
-            else if(memory[PC] == 5) // STORE
+            else if(memory[PC] == 5 && PC < memorySize-2) // STORE
             {
-                if(PC < memorySize-2 && memory[PC+2] < memorySize-3 && memory[PC+1] < 4 && memory[PC+2]+3 < 128)
+                if(memory[PC+2] < memorySize-3 && memory[PC+1] < 4 && memory[PC+2]+3 < 128)
                 {
                     uint8_t Rindex = memory[PC+1];
                     memory[memory[PC+2]] = R[Rindex];
@@ -119,17 +124,12 @@ class VCPU
                 }
                 else isPlaying = false;
             }
-            else if(memory[PC] == 6) // JUMP
+            else if(memory[PC] == 6 && PC < memorySize-1) // JUMP
             {
-                if(PC < memorySize-1)
-                {
-                    uint8_t NewPC = memory[PC+1];
-                    PC = NewPC;
-                }
-                else isPlaying = false;
-                
+                uint8_t NewPC = memory[PC+1];
+                PC = NewPC;
             }
-            else if(memory[PC] == 7) // CMP
+            else if(memory[PC] == 7 && PC < memorySize-1) // CMP
             {
                 uint8_t rIndex = memory[PC+1];
                 uint64_t checkCarry = R[rIndex] - R[memory[PC+2]];
@@ -156,6 +156,31 @@ class VCPU
             {
                 isPlaying = false;
             }
+            else if(memory[PC] == 9 && PC < memorySize - 1) //PUSH
+            {
+                uint8_t rIndex = memory[PC+1];
+                if(rIndex < 4 && SP-3 >= memorySize && SP < 256)
+                {
+                    memory[SP-3] = R[rIndex];
+                    memory[SP-2] = R[rIndex] >> 8;
+                    memory[SP-1] = R[rIndex] >> 16;
+                    memory[SP] = R[rIndex] >> 24;
+                    SP-=4;
+                    PC += 2;
+                }
+                else isPlaying = false;
+            }
+            else if(memory[PC] == 10 && PC < memorySize - 1) //POP
+            {
+                uint8_t rIndex = memory[PC+1];
+                if(rIndex < 4 && SP+4 < realMemorySize && SP >= memorySize)
+                {
+                    R[rIndex] = memory[SP+1] + (memory[SP+2] << 8) + (memory[SP+3] << 16) + (memory[SP+4] << 24);                    
+                    SP+=4;
+                    PC += 2;
+                }
+                else isPlaying = false;
+            }
             else{isPlaying = false;} //opcode inconnu -> HALT
             
         }
@@ -163,10 +188,9 @@ class VCPU
         void START()
         {
             isPlaying = true;
-            while(isPlaying)
+            while(isPlaying && PC < 192) //Check if not overflow
             {
                 LOOP();
-                if(PC > 127) isPlaying = false;
             }
         }
 };
