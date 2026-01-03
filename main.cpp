@@ -22,6 +22,10 @@ opcodes:
 16 = JAE (jump if above or equal) -> 8 bits pour l'adresse de l'instruction
 17 = call -> 8 bits pour l'adresse de l'instruction suivante
 18 = return -> pas d'arguments (carrément chuis choqué)
+19 = push imm32 -> 32 bits valeur immédiate
+20 = add imm32 -> 8 bits registre, 32 bits valeur immédiate
+21 = sub imm32 -> 8 bits registre, 32 bits valeur immédiate
+
 flags:
 sur 8 bits: [inutile], [inutile], [inutile], [inutile], Overflow, carry / borrow, négatif, nul
 
@@ -282,7 +286,75 @@ class VCPU
                 }
                 else isPlaying = false;
             }
-
+            else if(memory[PC] == 19 && PC < memorySize - 4) //Push imm32
+            {
+                memory[SP-3] = memory[PC+1];
+                memory[SP-2] = memory[PC+2] >> 8;
+                memory[SP-1] = memory[PC+3] >> 16;
+                memory[SP] = memory[PC+4] >> 24;
+                SP-=4;
+                PC += 5;
+            }
+            else if(memory[PC] == 20 && PC < memorySize - 5) //Add imm32
+            {
+                uint8_t rIndex = memory[PC+1];
+                uint32_t newValue = memory[PC+2] + (memory[PC+3] << 8) + (memory[PC+4] << 16) + (memory[PC+5] << 24);
+                uint32_t originalValue = R[rIndex];
+                R[rIndex] += newValue;
+                if(R[rIndex] == 0)
+                {
+                    FLAGS |= 1 << 0;
+                }
+                else FLAGS &= ~(1 << 0);
+                if(R[rIndex] & (1 << 31))
+                {
+                    FLAGS |= 1 << 1;
+                }
+                else FLAGS &= ~(1 << 1);
+                if(R[rIndex] < originalValue) //Carry car retour au début
+                {
+                    FLAGS |= 1 << 2;
+                }
+                else FLAGS &= ~(1 << 2);
+                int32_t a = originalValue; 
+                int32_t b = newValue; 
+                int32_t res = R[rIndex];
+                if((a > 0 && b > 0 && res < 0) || (a < 0 && b < 0 && res > 0)) //Overflow (incohérence de signe)
+                {
+                    FLAGS |= 1 << 3;
+                }
+                else FLAGS &= ~(1 << 3);
+            }
+            else if(memory[PC] == 21 && PC < memorySize - 5) //Sub imm32
+            {
+                uint8_t rIndex = memory[PC+1];
+                uint32_t newValue = memory[PC+2] + (memory[PC+3] << 8) + (memory[PC+4] << 16) + (memory[PC+5] << 24);
+                uint32_t originalValue = R[rIndex];
+                R[rIndex] -= newValue;
+                if(R[rIndex] == 0)
+                {
+                    FLAGS |= 1 << 0;
+                }
+                else FLAGS &= ~(1 << 0);
+                if(R[rIndex] & (1 << 31))
+                {
+                    FLAGS |= 1 << 1;
+                }
+                else FLAGS &= ~(1 << 1);
+                if(R[rIndex] < originalValue)
+                {
+                    FLAGS |= 1 << 2;
+                }
+                else FLAGS &= ~(1 << 2);
+                int32_t a = originalValue; 
+                int32_t b = newValue; 
+                int32_t res = R[rIndex];
+                if((a > 0 && b < 0 && res < 0) || (a < 0 && b > 0 && res > 0)) //Overflow (incohérence de signe)
+                {
+                    FLAGS |= 1 << 3;
+                }
+                else FLAGS &= ~(1 << 3); 
+            }
             else{isPlaying = false;} //opcode inconnu -> HALT
             
         }
