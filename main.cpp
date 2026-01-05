@@ -33,6 +33,8 @@ sur 8 bits: [inutile], [inutile], [inutile], [inutile], Overflow, carry / borrow
 config : mémoires 8 bits, 4 registres 32 bits, little endian, bits de 192 à 255 réservés à la stack
 
 SP pointe la prochaine case libre, mais qui peut être déjà écrite!, juste pas récupérable
+
+Toutes les instructions font au final la mm taille: 8 bits pour l'opcode + 8 bits pour un pointeur/registre + éventuellement 32 bits pour une valeur immédiate ou une adresse mémoire/instruction (mais tjrs là, juste pas utilisée)
 */
 
 
@@ -89,7 +91,7 @@ class VCPU
                     }
                     else FLAGS &= ~(1 << 3); 
 
-                    PC += 3; 
+                    PC += 6; 
                 }
                 else isPlaying = false;
                                 
@@ -124,7 +126,7 @@ class VCPU
                         FLAGS |= 1 << 3;
                     }
                     else FLAGS &= ~(1 << 3); 
-                    PC += 3; 
+                    PC += 6; 
                 }
                 else isPlaying = false;
             }
@@ -147,13 +149,13 @@ class VCPU
                     memory[memory[PC+2]+1] = R[Rindex] >> 8;
                     memory[memory[PC+2]+2] = R[Rindex] >> 16;
                     memory[memory[PC+2]+3] = R[Rindex] >> 24;
-                    PC += 3;
+                    PC += 6;
                 }
                 else isPlaying = false;
             }
             else if(memory[PC] == 6 && PC < memorySize-4) // JUMP
             {
-                uint8_t NewPC = memory[PC+1] + (memory[PC+2] << 8) + (memory[PC+3] << 16) + (memory[PC+4] << 24);
+                uint8_t NewPC = memory[PC+2] + (memory[PC+3] << 8) + (memory[PC+4] << 16) + (memory[PC+5] << 24);
                 PC = NewPC;
             }
             else if(memory[PC] == 7 && PC < memorySize-1 && memory[PC+2] < 4) // CMP
@@ -184,7 +186,7 @@ class VCPU
                     FLAGS |= 1 << 3;
                 }
                 else FLAGS &= ~(1 << 3); 
-                PC += 3; 
+                PC += 6; 
             }
             else if(PC >= memorySize || memory[PC] == 8) //HALT
             {
@@ -211,73 +213,74 @@ class VCPU
                 {
                     R[rIndex] = memory[SP+1] + (memory[SP+2] << 8) + (memory[SP+3] << 16) + (memory[SP+4] << 24);                    
                     SP+=4;
-                    PC += 2;
+                    PC += 6;
                 }
                 else isPlaying = false;
             }
             else if(memory[PC] == 11 && PC < memorySize - 1 && memory[PC+1] < memorySize) //JZ
             {
-                if(FLAGS & (1 << 0) && memory[PC+1] < memorySize)
+                if(FLAGS & (1 << 0))
                 {
-                    PC = memory[PC+1];
+                    PC = memory[PC+2] + (memory[PC+3] << 8) + (memory[PC+4] << 16) + (memory[PC+5] << 24);
+
                 }
-                else PC += 2;
+                else PC += 6;
             }
             else if(memory[PC] == 12 && PC < memorySize - 1 && memory[PC+1] < memorySize) //JNZ
             {
                 if(!(FLAGS & (1 << 0)))
                 {
-                    PC = memory[PC+1];
+                    PC = memory[PC+2] + (memory[PC+3] << 8) + (memory[PC+4] << 16) + (memory[PC+5] << 24);
                 }
-                else PC += 2;
+                else PC += 6;
 
             }
             else if(memory[PC] == 13 && PC < memorySize - 1) //JL
             {
                 if((FLAGS & (1 << 1)) != (FLAGS & (1 << 3)))
                 {
-                    PC = memory[PC+1];
+                    PC = memory[PC+2] + (memory[PC+3] << 8) + (memory[PC+4] << 16) + (memory[PC+5] << 24);
                 }
-                else PC += 2;
+                else PC += 6;
             }
             else if(memory[PC] == 14 && PC < memorySize - 1 && memory[PC+1] < memorySize) //JG
             {
                 if((FLAGS & (1 << 1)) == (FLAGS & (1 << 3)) && !(FLAGS & (1 << 0))) //négatif seulement si overflow, et pas nul
                 {
-                    PC = memory[PC+1];
+                    PC = memory[PC+2] + (memory[PC+3] << 8) + (memory[PC+4] << 16) + (memory[PC+5] << 24);
                 }
-                else PC += 2;
+                else PC += 6;
             }
             else if(memory[PC] == 15 && PC < memorySize - 1 && memory[PC+1] < memorySize) //JB
             {
                 if((FLAGS & (1 << 2))) //négatif seulement si overflow, et pas nul
                 {
-                    PC = memory[PC+1];
+                    PC = memory[PC+2] + (memory[PC+3] << 8) + (memory[PC+4] << 16) + (memory[PC+5] << 24);
                 }
-                else PC += 2;
+                else PC += 6;
             }
             else if(memory[PC] == 16 && PC < memorySize - 1 && memory[PC+1] < memorySize) //JAE
             {
                 if(!(FLAGS & (1 << 2))) //négatif seulement si overflow, et pas nul
                 {
-                    PC = memory[PC+1];
+                    PC = memory[PC+2] + (memory[PC+3] << 8) + (memory[PC+4] << 16) + (memory[PC+5] << 24);
                 }
-                else PC += 2;
+                else PC += 6;
             }
             else if(memory[PC] == 17) //call
             {
                 if(SP+3 >= memorySize && SP < 256)
                 {    
-                    memory[SP-3] = (PC+2);
-                    memory[SP-2] = (PC+2) >> 8;
-                    memory[SP-1] = (PC+2) >> 16;
-                    memory[SP] = (PC+2) >> 24;
-                    PC = memory[PC+1];
+                    memory[SP-3] = (PC+6);
+                    memory[SP-2] = (PC+6) >> 8;
+                    memory[SP-1] = (PC+6) >> 16;
+                    memory[SP] = (PC+6) >> 24;
+                    PC = memory[PC+2] + (memory[PC+3] << 8) + (memory[PC+4] << 16) + (memory[PC+5] << 24);
                     SP-=4;
                 }
                 else isPlaying = false;
             }
-            else if(memory[PC] == 18 && PC < memorySize - 2 && memory[PC+1] < memorySize) //return
+            else if(memory[PC] == 18) //return
             {
                 if(SP+4 < realMemorySize && SP >= memorySize)
                 {   
@@ -288,12 +291,12 @@ class VCPU
             }
             else if(memory[PC] == 19 && PC < memorySize - 4) //Push imm32
             {
-                memory[SP-3] = memory[PC+1];
-                memory[SP-2] = memory[PC+2] >> 8;
-                memory[SP-1] = memory[PC+3] >> 16;
-                memory[SP] = memory[PC+4] >> 24;
+                memory[SP-3] = memory[PC+2];
+                memory[SP-2] = memory[PC+3] >> 8;
+                memory[SP-1] = memory[PC+4] >> 16;
+                memory[SP] = memory[PC+5] >> 24;
                 SP-=4;
-                PC += 5;
+                PC += 6;
             }
             else if(memory[PC] == 20 && PC < memorySize - 5) //Add imm32
             {
@@ -324,6 +327,7 @@ class VCPU
                     FLAGS |= 1 << 3;
                 }
                 else FLAGS &= ~(1 << 3);
+                PC += 6;
             }
             else if(memory[PC] == 21 && PC < memorySize - 5) //Sub imm32
             {
@@ -354,6 +358,8 @@ class VCPU
                     FLAGS |= 1 << 3;
                 }
                 else FLAGS &= ~(1 << 3); 
+                PC += 6;
+
             }
             else{isPlaying = false;} //opcode inconnu -> HALT
             
@@ -362,7 +368,7 @@ class VCPU
         void START()
         {
             isPlaying = true;
-            while(isPlaying && PC < 192) //Check if not overflow
+            while(isPlaying && PC < memorySize) //Check if not overflow
             {
                 LOOP();
             }
