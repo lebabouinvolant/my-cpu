@@ -1,7 +1,7 @@
 #include <cstdint>
 #include <iostream>
 #include <cmath>
-#include "MyFunctions.h"
+#include "VCPU.h"
 
 /*
 opcodes:

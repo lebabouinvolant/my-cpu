@@ -2,7 +2,9 @@
 #include <cstdint>
 #include <bits/stdc++.h>
 #include <iostream>
-#include "./VCPU.h"
+#include <cmath>
+#include "VCPU.h"
+
 using namespace std;
 
 //This script is made to convert an assembly like code (string) to a memory array, usable in the vcpu
@@ -96,7 +98,7 @@ int main()
         {
             uint8_t memory[192];
             copy(programArray.begin(), programArray.end(), memory);
-            VCPU cpu(programArray);
+            VCPU cpu(memory);
         }
         
     }
