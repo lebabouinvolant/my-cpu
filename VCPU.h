@@ -1,0 +1,1 @@
+class VCPU(uint8_[192]);

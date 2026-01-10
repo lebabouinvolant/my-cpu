@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <iostream>
 #include <cmath>
+#include "MyFunctions.h"
 
 /*
 opcodes:
@@ -37,14 +38,21 @@ SP pointe la prochaine case libre, mais qui peut être déjà écrite!, juste pa
 Toutes les instructions font au final la mm taille: 8 bits pour l'opcode + 8 bits pour un pointeur/registre + éventuellement 32 bits pour une valeur immédiate ou une adresse mémoire/instruction (mais tjrs là, juste pas utilisée)
 */
 
-
-uint8_t memory[256];
-uint32_t memorySize = 192; //La taille pour la mémoire sans la stack (la ram utilisable par le programme quoi)
-uint32_t realMemorySize = 256; //On n'utilisera pas le size() pour se rapprocher d'un vrai CPU
 class VCPU
 {
+    VCPU(uint8_t memory[192]) : memory{}
+    {
+        for(int i = 0; i < 192; i++)
+        {
+            this->memory[i] = memory[i];
+        }
+    }
+
     private:
         uint32_t R[4] = {0,0,0,0};
+        uint8_t memory[256];
+        uint32_t memorySize = 192; //La taille pour la mémoire sans la stack (la ram utilisable par le programme quoi)
+        uint32_t realMemorySize = 256; //On n'utilisera pas le size() pour se rapprocher d'un vrai CPU
         uint32_t PC = 0;
         uint32_t SP = 255;
         uint8_t FLAGS = 0;
